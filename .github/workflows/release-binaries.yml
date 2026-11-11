@@ -330,6 +330,7 @@ jobs:
             -DYUZU_USE_BUNDLED_QT=OFF \
             -DENABLE_QT_TRANSLATION=ON \
             -DYUZU_USE_BUNDLED_SDL3=ON \
+            -DRENHDRUM_DOWNLOAD=ON \
             -DENABLE_UPDATE_CHECKER=ON \
             -DLICHII_BUILD_TAG=build-${{ github.run_number }} \
             -DLICHII_BUILD_PLATFORM=${{ matrix.platform }} \
