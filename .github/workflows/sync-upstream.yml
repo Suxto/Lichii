@@ -1,0 +1,62 @@
+name: Sync Lichii Release
+
+on:
+  schedule:
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-sichii-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: sichii-release
+          fetch-depth: 0
+      - name: Apply the next published Lichii release and build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          upstream=zortos293/Lichii
+          version_file=.github/sichii-upstream-build.txt
+          current=$(tr -d '\r\n' < "$version_file")
+          latest=$(gh api "repos/$upstream/releases/latest" --jq .tag_name)
+          if [[ ! "$current" =~ ^build-[1-9][0-9]*$ || ! "$latest" =~ ^build-[1-9][0-9]*$ ]]; then
+            echo "Unexpected upstream build tags: $current, $latest" >&2
+            exit 1
+          fi
+          if [[ "$latest" == build-177 ]]; then
+            echo 'Skipping build-177 because it hangs in Ocarina of Time on the test PC.'
+            exit 0
+          fi
+          if (( ${latest#build-} <= ${current#build-} )); then
+            echo "Sichii already tracks $current."
+            exit 0
+          fi
+          git fetch --no-tags "https://github.com/$upstream.git" \
+            "refs/tags/$current:refs/sichii/upstream/$current" \
+            "refs/tags/$latest:refs/sichii/upstream/$latest"
+          # Keep Sichii's workflows under local control. The default Actions token can
+          # push a commit with code changes, but cannot push upstream workflow changes.
+          git diff --binary --full-index --find-renames \
+            "refs/sichii/upstream/$current" "refs/sichii/upstream/$latest" \
+            -- . ':(exclude).github/workflows/**' > "$RUNNER_TEMP/upstream.patch"
+          if [[ -s "$RUNNER_TEMP/upstream.patch" ]]; then
+            git apply --3way --index "$RUNNER_TEMP/upstream.patch"
+          fi
+          printf '%s\n' "$latest" > "$version_file"
+          git add "$version_file"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Sync Lichii $latest"
+          git push origin HEAD:sichii-release
+          gh workflow run release-binaries.yml --ref sichii-release
